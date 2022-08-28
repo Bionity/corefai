@@ -1,0 +1,1 @@
+from corefai.models.e2e_lstm import E2E_LSTM
