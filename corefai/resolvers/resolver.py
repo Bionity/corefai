@@ -11,9 +11,10 @@ from tqdm import tqdm
 from datetime import datetime
 from subprocess import Popen, PIPE
 from torch.cuda.amp import GradScaler
+from typing import Dict, Any, Optional
 
-from corefai.utils import *
-from corefai.utils.configs import Config
+from corefai.utils.transforms import safe_divide, extract_gold_corefs, flatten
+from corefai.utils.tensor import to_cuda
 
 class Resolver:
     """ Class dedicated to training and evaluating the model
@@ -22,10 +23,33 @@ class Resolver:
     NAME = None
     MODEL = None
 
-    def __init__(self, args, model, transform):
-        self.args = args
+    def __init__(
+            self, 
+            model,
+            lr: Optional[float]=0.001,
+            mu: Optional[float]=0.9,
+            nu: Optional[float]=0.99,
+            eps: Optional[float]=1e-8,
+            weight_decay: Optional[float]=0.0,
+            decay: Optional[float]=0.99,
+            decay_steps: Optional[int]=1,
+            warmup: Optional[int]=0,
+            warmup_steps: Optional[int]=0,
+            encoder: Optional[str]='lstm',
+            amp: Optional[bool]=False,
+            ):
         self.model = model
-        self.transform = transform
+        self.lr = lr
+        self.mu = mu
+        self.nu = nu
+        self.eps = eps
+        self.weight_decay = weight_decay
+        self.decay = decay
+        self.decay_steps = decay_steps
+        self.warmup = warmup
+        self.warmup_steps = warmup_steps
+        self.encoder = encoder
+        self.amp = amp
 
     @property
     def device(self):
@@ -33,32 +57,34 @@ class Resolver:
 
     def train(self, num_epochs, eval_interval, train_corpus, val_corpus, **kwargs):
         """ Train a model """
-        args = self.args.update(locals())
-
-        if args.encoder == 'lstm':
-            self.optimizer = optim.Adam(self.model.parameters(), args.lr, (args.mu, args.nu), args.eps, args.weight_decay)
-            self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, args.decay**(1/args.decay_steps))
-        elif args.encoder == 'transformer':
-            self.optimizer = optim.Adam(self.model.parameters(), args.lr, (args.mu, args.nu), args.eps, args.weight_decay)
-            self.scheduler = optim.lr_scheduler.InverseSquareRootLR(self.optimizer, args.warmup_steps)
+        
+        train_corpus = [doc for doc in list(train_corpus) if doc.sents]
+        val_corpus = [doc for doc in list(val_corpus) if doc.sents]
+        
+        if self.encoder == 'lstm':
+            self.optimizer = optim.Adam(self.model.parameters(), self.lr, (self.mu, self.nu), self.eps, self.weight_decay)
+            self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, self.decay**(1/self.decay_steps))
+        elif self.encoder == 'transformer':
+            self.optimizer = optim.Adam(self.model.parameters(), self.lr, (self.mu, self.nu), self.eps, self.weight_decay)
+            self.scheduler = optim.lr_scheduler.InverseSquareRootLR(self.optimizer, self.warmup_steps)
         else:
-            steps = len(train_corpus) * num_epochs // args.update_steps
+            steps = len(train_corpus) * num_epochs // self.update_steps
             self.optimizer = optim.AdamW(
-                [{'params': p, 'lr': args.lr * (1 if n.startswith('encoder') else args.lr_rate)}
+                [{'params': p, 'lr': self.lr * (1 if n.startswith('encoder') else self.lr_rate)}
                  for n, p in self.model.named_parameters()],
-                args.lr,
-                (args.mu, args.nu),
-                args.eps,
-                args.weight_decay
+                self.lr,
+                (self.mu, self.nu),
+                self.eps,
+                self.weight_decay
             )
-            self.scheduler = optim.lr_scheduler.LinearLR(self.optimizer, int(steps*args.warmup), steps)
-        self.scaler = GradScaler(enabled=args.amp)
+            self.scheduler = optim.lr_scheduler.LinearLR(self.optimizer, int(steps*self.warmup), steps)
+        self.scaler = GradScaler(enabled=self.amp)
 
         if not os.path.exists("ckpts/"):
             os.makedirs("ckpts/")
 
         for epoch in range(1, num_epochs+1):
-            self.train_epoch(epoch, *args, **kwargs)
+            self.train_epoch(epoch, train_corpus, steps=100)
 
             # Save often
             self.save_model("ckpts/{}".format(str(datetime.now())))
@@ -70,14 +96,14 @@ class Resolver:
                 results = self.evaluate(val_corpus)
                 print(results)
 
-    def train_epoch(self, epoch):
+    def train_epoch(self, epoch, train_corpus, steps):
         """ Run a training epoch over 'steps' documents """
 
         # Set model to train (enables dropout)
         self.model.train()
 
         # Randomly sample documents from the train corpus
-        batch = random.sample(self.train_corpus, self.steps)
+        batch = random.sample(train_corpus, steps)
 
         epoch_loss, epoch_mentions, epoch_corefs, epoch_identified = [], [], [], []
 
@@ -101,9 +127,6 @@ class Resolver:
             epoch_mentions.append(safe_divide(mentions_found, total_mentions))
             epoch_corefs.append(safe_divide(corefs_found, total_corefs))
             epoch_identified.append(safe_divide(corefs_chosen, total_corefs))
-
-        # Step the learning rate decrease scheduler
-        self.scheduler.step()
 
         print('Epoch: %d | Loss: %f | Mention recall: %f | Coref recall: %f | Coref precision: %f' \
                 % (epoch, np.mean(epoch_loss), np.mean(epoch_mentions),
@@ -159,6 +182,10 @@ class Resolver:
 
         # Step the optimizer
         self.optimizer.step()
+        
+        # Step the learning rate decrease scheduler
+        self.scheduler.step()
+
 
         return (loss.item(), mentions_found, total_mentions,
                 corefs_found, total_corefs, corefs_chosen)

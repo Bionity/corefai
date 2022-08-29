@@ -3,8 +3,9 @@ from torch import nn
 from torch.nn import functional as F
 
 import attr
+from typing import List
 
-from corefai.structs.dataset import Span
+from corefai.structs.dataset import Span, Document
 from corefai.modules.ffnn import Score, Distance, Genre, Speaker
 from corefai.utils.transforms import compute_idx_spans, \
                                         pad_and_stack, prune, pairwise_indexes
@@ -13,15 +14,26 @@ from corefai.utils.tensor import speaker_label, to_var, to_cuda
 class MentionScore(nn.Module):
     """ Mention scoring module
     """
-    def __init__(self, gi_dim, attn_dim, distance_dim):
+    def __init__(self, gi_dim: int, attn_dim: int, distance_dim: int):
+        """ Initialize the mention scoring module
+            Args:
+                gi_dim (int): dimension of the span representation
+                attn_dim (int): dimension of the attention representation
+                distance_dim (int): dimension of the distance representation
+        """
         super().__init__()
 
         self.attention = Score(attn_dim)
         self.width = Distance(distance_dim)
         self.score = Score(gi_dim)
 
-    def forward(self, states, embeds, doc, K=250):
+    def forward(self, states: torch.Tensor, embeds: torch.Tensor, doc: Document, K=250):
         """ Compute unary mention score for each span
+            Args:
+                states (List[Tensor]): list of hidden states for each span
+                embeds (Tensor): input embeddings for each sentence
+                doc (Document): document object
+                K (int): number of top scoring spans to return
         """
 
         # Initialize Span objects containing start index, end index, genre, speaker
@@ -83,7 +95,14 @@ class MentionScore(nn.Module):
 class PairwiseScore(nn.Module):
     """ Coreference pair scoring module
     """
-    def __init__(self, gij_dim, distance_dim, genre_dim, speaker_dim):
+    def __init__(self, gij_dim: int, distance_dim: int, genre_dim: int, speaker_dim: int):
+        """ Initialize the pairwise scoring module
+            Args:
+                gij_dim (int): dimension of the span representation
+                distance_dim (int): dimension of the distance representation
+                genre_dim (int): dimension of the genre representation
+                speaker_dim (int): dimension of the speaker representation
+        """
         super().__init__()
 
         self.distance = Distance(distance_dim)
@@ -92,8 +111,12 @@ class PairwiseScore(nn.Module):
 
         self.score = Score(gij_dim)
 
-    def forward(self, spans, g_i, mention_scores):
+    def forward(self, spans: List[Span], g_i: torch.Tensor, mention_scores: torch.Tensor):
         """ Compute pairwise score for spans and their up to K antecedents
+            Args:
+                spans (List[Span]): list of Span objects
+                g_i (Tensor): span representation for each span
+                mention_scores (Tensor): unary mention score for each span
         """
         # Extract raw features
 

@@ -5,8 +5,8 @@ from fnmatch import fnmatch
 from copy import deepcopy as c
 from cached_property import cached_property
 
-from corefai.utils.transforms import *
-from corefai.utils.data import *
+from corefai.utils.transforms import flatten, compute_idx_spans
+from corefai.utils.data import conll_clean_token
 
 
 import nltk 
@@ -57,7 +57,7 @@ class Document:
         self, 
         raw_text: str, 
         tokens: List[str],
-        lang: str = 'en',
+        lang: Optional[str] = 'en',
         corefs: Optional[List[Any]] = None, 
         speakers: Optional[str] = None, 
         genre: Optional[str] = None, 
@@ -82,7 +82,9 @@ class Document:
 
         if self.lang == 'en':
             self.punkt_sent_tokenizer = nltk.data.load('tokenizers/punkt/english.pickle')
-
+        #TODO: add other languages
+        else:
+            self.punkt_sent_tokenizer = nltk.data.load('tokenizers/punkt/english.pickle')
         # Filled in at evaluation time.
         self.tags = None
 
@@ -126,6 +128,8 @@ class Document:
     def speaker(self, i):
         """ Compute speaker of a span """
         if self.speakers is None:
+            return None
+        elif len(self.speakers) <= i[0] or len(self.speakers) <= i[-1]:
             return None
         elif self.speakers[i[0]] == self.speakers[i[-1]]:
             return self.speakers[i[0]]
