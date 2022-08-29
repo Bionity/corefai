@@ -7,7 +7,7 @@ class E2E_LSTM_Resolver(Resolver):
     """ Class dedicated to training and evaluating the model
     """
 
-    NAME = "e2e-lstm-we"
+    NAME = "e2e-lstm-en"
     MODEL = E2E_LSTM
 
     def __init__(self, *args, **kwargs):

@@ -4,6 +4,7 @@ import torch.optim as optim
 import os
 import io
 import random
+import dill
 
 import numpy as np
 import networkx as nx
@@ -13,8 +14,11 @@ from subprocess import Popen, PIPE
 from torch.cuda.amp import GradScaler
 from typing import Dict, Any, Optional
 
+import corefai
 from corefai.utils.transforms import safe_divide, extract_gold_corefs, flatten
 from corefai.utils.tensor import to_cuda
+from corefai.utils.data import download
+from corefai.utils.configs import Config
 
 class Resolver:
     """ Class dedicated to training and evaluating the model
@@ -307,12 +311,28 @@ class Resolver:
 
         return golds_file, preds_file
 
-    def save_model(self, savepath):
-        """ Save model state dictionary """
-        torch.save(self.model.state_dict(), savepath + '.pt')
+    def save_model(self, path):
+        model = self.model
+        if hasattr(model, 'module'):
+            model = self.model.module
+        state_dict = {k: v.cpu() for k, v in model.state_dict().items()}
+        pretrained = state_dict.pop('pretrained.weight', None)
+        state = {'name': self.NAME,
+                 'state_dict': state_dict,
+                 'pretrained': pretrained}
+        torch.save(state, path+'.pt', pickle_module=dill)
 
-    def load_model(self, loadpath):
+    @classmethod
+    def load_model(cls, path, src = 'gcp', reload = False, checkpoint=False,  **kwargs):
         """ Load state dictionary into model """
-        state = torch.load(loadpath)
-        self.model.load_state_dict(state)
-        self.model = to_cuda(self.model)
+        if not os.path.exists(path):
+            path = download(src, corefai.MODEL[src].get(path, path), reload=reload)
+        state = torch.load(path, map_location='cpu')
+        cls = corefai.RESOLVER[state['name']] if cls.NAME is None else cls
+        model = cls.MODEL
+        model.load_pretrained(state['pretrained'])
+        model.load_state_dict(state['state_dict'], False)
+        resolver = cls(model)
+        resolver.checkpoint_state_dict = state.get('checkpoint_state_dict', None) if checkpoint else None
+        resolver.model.to(resolver.device)
+        return resolver

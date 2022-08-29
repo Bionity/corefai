@@ -5,8 +5,8 @@ from torch import nn
 class E2E_LSTM(nn.Module):
     """ Super class to compute coreference links between spans
     """
-    def __init__(self, embeds_dim,
-                       hidden_dim,
+    def __init__(self, embeds_dim = 400,
+                       hidden_dim = 200,
                        vocab = None,
                        glove_name = 'glove.6B.300d.txt',
                        turian_name = 'hlbl-embeddings-scaled.EMBEDDING_SIZE=50.txt', 
