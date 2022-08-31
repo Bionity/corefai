@@ -17,5 +17,5 @@ SRC = {'gcp': 'corefai-models'}
 NAME = {
     'e2e-lstm-en': 'e2e_lstm_en',
 }
-MODEL = {src: {n: f"{link}/{m}.pt.zip" for n, m in NAME.items()} for src, link in SRC.items()}
+MODEL = {src: {n: f"{link}/{m}.zip" for n, m in NAME.items()} for src, link in SRC.items()}
 

@@ -8,8 +8,6 @@ from corefai.utils.transforms import pack, unpack_and_unpad
 from corefai.utils.tensor import lookup_tensor
 import os
 
-CWD = os.getcwd().split('/')[0]
-
 class LSTMDocumentEncoder(nn.Module):
     """ Document encoder for tokens
     """
@@ -20,7 +18,7 @@ class LSTMDocumentEncoder(nn.Module):
         vocab = None, 
         glove_name = 'glove.6B.300d.txt',
         turian_name = 'hlbl-embeddings-scaled.EMBEDDING_SIZE=50.txt', 
-        cache = '/.vectors_cache/',
+        cache = os.path.expanduser('~/.vectors_cache/'),
         n_layers=2):
         super().__init__()
         self.GLOVE = LazyVectors(vocab = vocab,

@@ -1,9 +1,9 @@
 import torch
-
+import os
 from corefai.structs.vectors import LazyVectors
 
 def test_lazy_vectors():
-    VECTORS = LazyVectors(cache='/home/serhiystep/.vector_cache/',
+    VECTORS = LazyVectors(cache=os.path.expanduser('~/.vector_cache/'),
                             name='glove.6B.300d.txt',
                             vocab = {'hello', 'world'},
                                 skim=None)
@@ -15,7 +15,7 @@ def test_lazy_vectors():
 
     assert embeddings.weight.shape == (4, 300)
 
-    VECTORS = LazyVectors(cache='/home/serhiystep/.vector_cache/',
+    VECTORS = LazyVectors(cache=os.path.expanduser('~/.vector_cache/'),
                             name='glove.6B.300d.txt',
                             vocab = None,
                                 skim=None)
@@ -27,7 +27,7 @@ def test_lazy_vectors():
 
     assert embeddings.weight.shape[0] > 10
 
-    VECTORS = LazyVectors(cache='/home/serhiystep/.vector_cache/',
+    VECTORS = LazyVectors(cache=os.path.expanduser('~/.vector_cache/'),
                             name='glove.6B.300d.txt',
                             vocab = None,
                             vocab_file = 'data/vocab.txt',

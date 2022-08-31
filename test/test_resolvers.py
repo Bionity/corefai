@@ -1,6 +1,7 @@
 from corefai.resolvers import Resolver
 from corefai.models import E2E_LSTM
 from corefai.structs import Document, Corpus
+import os
 
 def test_resolver():
     train_corpus = Corpus(dirname = 'data/train', pattern = '*conll')
@@ -11,7 +12,7 @@ def test_resolver():
     scorer = E2E_LSTM(embeds_dim, hidden_dim, distance_dim = distance_dim,
         glove_name = 'glove.6B.300d.txt', 
         turian_name = 'hlbl-embeddings-scaled.EMBEDDING_SIZE=50.txt', 
-        cache = '/home/serhiystep/.vector_cache/')
+        cache = os.path.expanduser('~/.vector_cache/'))
 
     resolver = Resolver(scorer)
     resolver.MODEL = E2E_LSTM

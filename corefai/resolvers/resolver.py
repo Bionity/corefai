@@ -5,6 +5,7 @@ import os
 import io
 import random
 import dill
+import json
 
 import numpy as np
 import networkx as nx
@@ -17,8 +18,10 @@ from typing import Dict, Any, Optional
 import corefai
 from corefai.utils.transforms import safe_divide, extract_gold_corefs, flatten
 from corefai.utils.tensor import to_cuda
-from corefai.utils.data import download
+from corefai.utils.data import download, CACHE
 from corefai.utils.configs import Config
+from corefai.structs import Document, Corpus
+
 
 class Resolver:
     """ Class dedicated to training and evaluating the model
@@ -26,7 +29,7 @@ class Resolver:
 
     NAME = None
     MODEL = None
-
+    encoder = None
     def __init__(
             self,
             model, 
@@ -46,17 +49,25 @@ class Resolver:
     def device(self):
         return 'cuda' if torch.cuda.is_available() else 'cpu'
 
-    def train(self, num_epochs, eval_interval, train_corpus, val_corpus, **kwargs):
+    def train(
+            self, 
+            num_epochs: int, 
+            eval_interval: int, 
+            train_corpus: str, val_corpus:str, **kwargs):
         """ Train a model """
         args = self.args.update(locals())
+
+        train_corpus = Corpus(dirname = args.train_corpus, pattern = args.pattern)
+        val_corpus = Corpus(dirname = args.val_corpus, pattern = args.pattern)
+
         train_corpus = [doc for doc in list(train_corpus) if doc.sents]
         val_corpus = [doc for doc in list(val_corpus) if doc.sents]
         
         if self.optimizer is not None and self.scheduler is not None:
-            if args.encoder == 'lstm':
+            if self.encoder == 'lstm':
                 self.optimizer = optim.Adam(self.model.parameters(), args.lr, (args.mu, args.nu), args.eps, args.weight_decay)
                 self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, args.decay**(1/args.decay_steps))
-            elif args.encoder == 'transformer':
+            elif self.encoder == 'transformer':
                 self.optimizer = optim.Adam(self.model.parameters(), args.lr, (args.mu, args.nu), args.eps, args.weight_decay)
                 self.scheduler = optim.lr_scheduler.InverseSquareRootLR(self.optimizer, args.warmup_steps)
             else:
@@ -73,16 +84,16 @@ class Resolver:
 
         self.scaler = GradScaler(enabled=args.amp)
 
-        if not os.path.exists("ckpts/"):
-            os.makedirs("ckpts/")
-
-        for epoch in range(1, num_epochs+1):
+        if not os.path.exists("../ckpts/"):
+            os.makedirs("../ckpts/")
+        
+        for epoch in range(1, args.num_epochs+1):
             self.epoch = epoch
 
             self.train_epoch(epoch, train_corpus, steps=100)
 
             # Save often
-            self.save_model("ckpts/{}".format(str(datetime.now())))
+            self.save_model("../ckpts/{}".format(str(datetime.now())))
 
             # Evaluate every eval_interval epochs
             if epoch % eval_interval == 0:
@@ -188,6 +199,10 @@ class Resolver:
     def evaluate(self, val_corpus, eval_script='../src/eval/scorer.pl'):
         """ Evaluate a corpus of CoNLL-2012 gold files """
 
+        args = self.args.update(locals())
+
+        val_corpus = Corpus(dirname = args.val_corpus, pattern = args.pattern)
+
         # Predict files
         print('Evaluating on validation corpus...')
         predicted_docs = [self.predict(doc) for doc in tqdm(val_corpus)]
@@ -202,18 +217,19 @@ class Resolver:
         stdout, stderr = p.communicate()
         results = str(stdout).split('TOTALS')[-1]
 
-        if not os.path.exists("preds/"):
-            os.makedirs("preds/")
+        if not os.path.exists("../preds/"):
+            os.makedirs("../preds/")
 
         # Write the results out for later viewing
-        with open('preds/results.txt', 'w+') as f:
+        with open('../preds/results.txt', 'w+') as f:
             f.write(results)
             f.write('\n\n\n')
 
         return results
 
-    def predict(self, doc):
+    def predict(self, doc: Optional[Document] = None, doc_path: Optional[str] = None):
         """ Predict coreference clusters in a document """
+        args = self.args.update(locals())
 
         # Set to eval mode
         self.model.eval()
@@ -302,26 +318,46 @@ class Resolver:
 
         return golds_file, preds_file
 
-    def save_model(self, path):
+    def save_model(self, path: Optional[str]=None):
+        """ Save the model to a file """
+        if path is None:
+            path = os.path.join(CACHE, corefai.NAME[self.NAME])
+        if not os.path.exists(path):
+            os.makedirs(path)
+        configs = dict(self.args)
         state = {'name': self.NAME,
                  'model': self.model,
                  'optimizer': self.optimizer.state_dict(),
                  'scheduler': self.scheduler.state_dict(),
                  'epoch': self.epoch,
                  }
-        torch.save(state, path+'.pt', pickle_module=dill)
+        with open(os.path.join(path, 'config.json'), 'w') as f:
+            json.dump(configs, f)
+        torch.save(state, os.path.join(path, 'pytorch_model.pt'), pickle_module=dill)
 
     @classmethod
     def load_model(cls, path, src = 'gcp', reload = False, checkpoint=False,  **kwargs):
         """ Load state dictionary into model """
+        args = Config(**locals())
         if not os.path.exists(path):
             path = download(src, corefai.MODEL[src].get(path, path), reload=reload)
-        state = torch.load(path, map_location='cpu')
+        state = torch.load(os.path.join(path, 'pytorch_model.pt'), map_location='cpu')
         cls = corefai.RESOLVER[state['name']] if cls.NAME is None else cls
-        model = cls.MODEL
-        model.load_pretrained(state['pretrained'])
-        model.load_state_dict(state['state_dict'], False)
-        resolver = cls(model)
-        resolver.checkpoint_state_dict = state.get('checkpoint_state_dict', None) if checkpoint else None
+        model = state['model']
+        optimizer = state['optimizer']
+        scheduler = state['scheduler']
+        epoch = state['epoch']
+
+        #load configs
+        with open(os.path.join(path, 'config.json'), 'r') as f:
+            configs = json.load(f)
+        args.update(configs)
+
+        resolver = cls(**args)
+        resolver.model = model
+        resolver.optimizer.load_state_dict(optimizer)
+        resolver.scheduler.load_state_dict(scheduler)
+        resolver.epoch = epoch
         resolver.model.to(resolver.device)
+
         return resolver
