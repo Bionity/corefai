@@ -28,32 +28,19 @@ class Resolver:
     MODEL = None
 
     def __init__(
-            self, 
-            model,
-            lr: Optional[float]=0.001,
-            mu: Optional[float]=0.9,
-            nu: Optional[float]=0.99,
-            eps: Optional[float]=1e-8,
-            weight_decay: Optional[float]=0.0,
-            decay: Optional[float]=0.99,
-            decay_steps: Optional[int]=1,
-            warmup: Optional[int]=0,
-            warmup_steps: Optional[int]=0,
-            encoder: Optional[str]='lstm',
-            amp: Optional[bool]=False,
+            self,
+            model, 
+            args: Config,
+            **kwargs
             ):
         self.model = model
-        self.lr = lr
-        self.mu = mu
-        self.nu = nu
-        self.eps = eps
-        self.weight_decay = weight_decay
-        self.decay = decay
-        self.decay_steps = decay_steps
-        self.warmup = warmup
-        self.warmup_steps = warmup_steps
-        self.encoder = encoder
-        self.amp = amp
+        
+        self.args = args.update(locals())
+
+        self.optimizer = None
+        self.scheduler = None
+        self.scaler = None
+        self.epoch = 0
 
     @property
     def device(self):
@@ -61,33 +48,37 @@ class Resolver:
 
     def train(self, num_epochs, eval_interval, train_corpus, val_corpus, **kwargs):
         """ Train a model """
-        
+        args = self.args.update(locals())
         train_corpus = [doc for doc in list(train_corpus) if doc.sents]
         val_corpus = [doc for doc in list(val_corpus) if doc.sents]
         
-        if self.encoder == 'lstm':
-            self.optimizer = optim.Adam(self.model.parameters(), self.lr, (self.mu, self.nu), self.eps, self.weight_decay)
-            self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, self.decay**(1/self.decay_steps))
-        elif self.encoder == 'transformer':
-            self.optimizer = optim.Adam(self.model.parameters(), self.lr, (self.mu, self.nu), self.eps, self.weight_decay)
-            self.scheduler = optim.lr_scheduler.InverseSquareRootLR(self.optimizer, self.warmup_steps)
-        else:
-            steps = len(train_corpus) * num_epochs // self.update_steps
-            self.optimizer = optim.AdamW(
-                [{'params': p, 'lr': self.lr * (1 if n.startswith('encoder') else self.lr_rate)}
-                 for n, p in self.model.named_parameters()],
-                self.lr,
-                (self.mu, self.nu),
-                self.eps,
-                self.weight_decay
-            )
-            self.scheduler = optim.lr_scheduler.LinearLR(self.optimizer, int(steps*self.warmup), steps)
-        self.scaler = GradScaler(enabled=self.amp)
+        if self.optimizer is not None and self.scheduler is not None:
+            if args.encoder == 'lstm':
+                self.optimizer = optim.Adam(self.model.parameters(), args.lr, (args.mu, args.nu), args.eps, args.weight_decay)
+                self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, args.decay**(1/args.decay_steps))
+            elif args.encoder == 'transformer':
+                self.optimizer = optim.Adam(self.model.parameters(), args.lr, (args.mu, args.nu), args.eps, args.weight_decay)
+                self.scheduler = optim.lr_scheduler.InverseSquareRootLR(self.optimizer, args.warmup_steps)
+            else:
+                steps = len(train_corpus) * num_epochs // args.update_steps
+                self.optimizer = optim.AdamW(
+                    [{'params': p, 'lr': args.lr * (1 if n.startswith('encoder') else args.lr_rate)}
+                    for n, p in self.model.named_parameters()],
+                    args.lr,
+                    (args.mu, args.nu),
+                    args.eps,
+                    args.weight_decay
+                )
+                self.scheduler = optim.lr_scheduler.LinearLR(self.optimizer, int(steps*args.warmup), steps)
+
+        self.scaler = GradScaler(enabled=args.amp)
 
         if not os.path.exists("ckpts/"):
             os.makedirs("ckpts/")
 
         for epoch in range(1, num_epochs+1):
+            self.epoch = epoch
+
             self.train_epoch(epoch, train_corpus, steps=100)
 
             # Save often
@@ -312,14 +303,12 @@ class Resolver:
         return golds_file, preds_file
 
     def save_model(self, path):
-        model = self.model
-        if hasattr(model, 'module'):
-            model = self.model.module
-        state_dict = {k: v.cpu() for k, v in model.state_dict().items()}
-        pretrained = state_dict.pop('pretrained.weight', None)
         state = {'name': self.NAME,
-                 'state_dict': state_dict,
-                 'pretrained': pretrained}
+                 'model': self.model,
+                 'optimizer': self.optimizer.state_dict(),
+                 'scheduler': self.scheduler.state_dict(),
+                 'epoch': self.epoch,
+                 }
         torch.save(state, path+'.pt', pickle_module=dill)
 
     @classmethod

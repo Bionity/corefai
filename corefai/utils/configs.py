@@ -7,8 +7,8 @@ import os
 from ast import literal_eval
 from configparser import ConfigParser
 
-import supar
-from supar.utils.fn import download
+import corefai
+from corefai.utils.data import download
 
 
 class Config(object):
@@ -62,7 +62,10 @@ class Config(object):
     @classmethod
     def load(cls, conf='', unknown=None, **kwargs):
         config = ConfigParser()
-        config.read(conf if not conf or os.path.exists(conf) else download(supar.CONFIG['github'].get(conf, conf)))
+        try:
+            config.read(conf if not conf or os.path.exists(conf))
+        except:
+            raise ValueError(f"Config file {conf} not found")
         config = dict((name, literal_eval(value))
                       for section in config.sections()
                       for name, value in config.items(section))

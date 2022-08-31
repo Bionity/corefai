@@ -10,8 +10,23 @@ class E2E_LSTM_Resolver(Resolver):
     NAME = "e2e-lstm-en"
     MODEL = E2E_LSTM
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, 
+        args: Config,
+        embeds_dim = 400,
+        hidden_dim = 200,
+        vocab = None,
+        glove_name = 'glove.6B.300d.txt',
+        turian_name = 'hlbl-embeddings-scaled.EMBEDDING_SIZE=50.txt', 
+        cache = '/.vectors_cache/',
+        char_filters=50,
+        distance_dim=20,
+        genre_dim=20,
+        speaker_dim=20,
+        **kwargs):
+        super().__init__(args, **kwargs)
+        self.args = args.update(locals())
+        self.model = self.MODEL(embeds_dim, hidden_dim, vocab, glove_name, turian_name, 
+                                        cache, char_filters, distance_dim, genre_dim, speaker_dim)
 
     def train(self, num_epochs, eval_interval, train_corpus, val_corpus, **kwargs):
         return super().train(**Config().update(locals()))
