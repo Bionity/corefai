@@ -35,7 +35,7 @@ class LSTMDocumentEncoder(nn.Module):
             self.turian_shape1 = turian_shape1
 
             self.glove = nn.Embedding(self.glove_shape0, self.glove_shape1)
-            self.turian = nn.Embedding(self.turian_weights0, self.turian_weights1)
+            self.turian = nn.Embedding(self.turian_shape0, self.turian_shape1)
         else:
             self.GLOVE = LazyVectors(vocab = vocab,
                                 name=glove_name,

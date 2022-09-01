@@ -2,7 +2,7 @@ from corefai.utils import *
 from corefai.utils.configs import Config
 from corefai.models import E2E_LSTM
 from corefai.resolvers import Resolver
-
+from torch import optim
 class E2E_LSTM_Resolver(Resolver):
     """ Class dedicated to training and evaluating the model
     """
@@ -22,8 +22,8 @@ class E2E_LSTM_Resolver(Resolver):
                             'turian_shape0': self.model.encoder.turian_shape0, 
                                 'turian_shape1': self.model.encoder.turian_shape1}
         self.args.update(embeds_shapes)
-        self.optimizer = None
-        self.scheduler = None
+        self.optimizer = optim.Adam(self.model.parameters(), args.lr, (args.mu, args.nu), args.eps, args.weight_decay)
+        self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, args.decay**(1/args.decay_steps))
         self.scaler = None
         self.epoch = 0
 

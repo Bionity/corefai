@@ -35,7 +35,7 @@ class Resolver:
             args: Config,
             **kwargs
             ):
-        self.model = None
+        self.model = self.MODEL(**args)
         
         self.args = args.update(locals())
 
@@ -330,7 +330,6 @@ class Resolver:
         pretrained = state_dict.pop('pretrained.weight', None)
         state = {'name': self.NAME,
                  'state_dict': state_dict,
-                 'pretrained': pretrained,
                  'optimizer': self.optimizer.state_dict(),
                  'scheduler': self.scheduler.state_dict(),
                  'epoch': self.epoch,
@@ -357,8 +356,7 @@ class Resolver:
         args.update(configs)
         args.update({'checkpoint': checkpoint})
 
-        resolver = cls(**args)
-        resolver.model.load_pretrained(state['pretrained'])
+        resolver = cls(args)
         resolver.model.load_state_dict(state['state_dict'], False)
         resolver.optimizer.load_state_dict(optimizer)
         resolver.scheduler.load_state_dict(scheduler)
