@@ -2,7 +2,7 @@ from corefai.utils import *
 from corefai.utils.configs import Config
 from corefai.models import E2E_LSTM
 from corefai.resolvers import Resolver
-
+from torch import optim
 class E2E_LSTM_Resolver(Resolver):
     """ Class dedicated to training and evaluating the model
     """
@@ -12,23 +12,18 @@ class E2E_LSTM_Resolver(Resolver):
     encoder = 'lstm'
     def __init__(self, 
         args: Config,
-        # embeds_dim = 400,
-        # hidden_dim = 200,
-        # vocab = None,
-        # glove_name = 'glove.6B.300d.txt',
-        # turian_name = 'hlbl-embeddings-scaled.EMBEDDING_SIZE=50.txt', 
-        # cache = '/.vectors_cache/',
-        # char_filters=50,
-        # distance_dim=20,
-        # genre_dim=20,
-        # speaker_dim=20,
+
         **kwargs):
-        super().__init__(args, **kwargs)
+        super().__init__(args)
         self.args = args.update(locals())
-        self.model = self.MODEL(args.embeds_dim, args.hidden_dim, args.vocab, args.glove_name, args.turian_name, 
-                                        args.cache, args.char_filters, args.distance_dim, args.genre_dim, args.speaker_dim)
-        self.optimizer = None
-        self.scheduler = None
+        self.model = self.MODEL(**self.args)
+        embeds_shapes = {'glove_shape0': self.model.encoder.glove_shape0, 
+                            'glove_shape1': self.model.encoder.glove_shape1, 
+                            'turian_shape0': self.model.encoder.turian_shape0, 
+                                'turian_shape1': self.model.encoder.turian_shape1}
+        self.args.update(embeds_shapes)
+        self.optimizer = optim.Adam(self.model.parameters(), args.lr, (args.mu, args.nu), args.eps, args.weight_decay)
+        self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, args.decay**(1/args.decay_steps))
         self.scaler = None
         self.epoch = 0
 
@@ -43,4 +38,4 @@ class E2E_LSTM_Resolver(Resolver):
     def predict(self, doc):
         """ Predict coreference clusters in a document """
         return super().predict(**Config().update(locals()))
-    
+

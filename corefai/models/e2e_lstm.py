@@ -14,10 +14,15 @@ class E2E_LSTM(nn.Module):
                        char_filters=50,
                        distance_dim=20,
                        genre_dim=20,
-                       speaker_dim=20):
+                       speaker_dim=20,
+                       glove_shape0=400000,
+                       glove_shape1=300,
+                       turian_shape0=400000,
+                       turian_shape1=50,
+                       checkpoint = False,
+                       **kwargs):
 
         super().__init__()
-
         # Forward and backward pass over the document
         attn_dim = hidden_dim*2
 
@@ -32,8 +37,19 @@ class E2E_LSTM(nn.Module):
         self.cache = cache
 
         # Initialize modules
-        self.encoder = LSTMDocumentEncoder(hidden_dim, char_filters, vocab,
-                                            glove_name, turian_name, cache)
+        self.encoder = LSTMDocumentEncoder(
+                                        hidden_dim = hidden_dim, 
+                                        char_filters = char_filters, 
+                                        vocab = vocab,
+                                        glove_name = glove_name,
+                                        turian_name = turian_name,  
+                                        cache = cache,
+                                        glove_shape0 = glove_shape0,
+                                        glove_shape1 = glove_shape1,
+                                        turian_shape0 = turian_shape0,
+                                        turian_shape1 = turian_shape1,
+                                        checkpoint = checkpoint,
+                                        )
         self.score_spans = MentionScore(gi_dim, attn_dim, distance_dim)
         self.score_pairs = PairwiseScore(gij_dim, distance_dim, genre_dim, speaker_dim)
 
