@@ -32,11 +32,10 @@ class Resolver:
     encoder = None
     def __init__(
             self,
-            model, 
             args: Config,
             **kwargs
             ):
-        self.model = model
+        self.model = None
         
         self.args = args.update(locals())
 
@@ -63,7 +62,7 @@ class Resolver:
         train_corpus = [doc for doc in list(train_corpus) if doc.sents]
         val_corpus = [doc for doc in list(val_corpus) if doc.sents]
         
-        if self.optimizer is not None and self.scheduler is not None:
+        if self.optimizer is None and self.scheduler is None:
             if self.encoder == 'lstm':
                 self.optimizer = optim.Adam(self.model.parameters(), args.lr, (args.mu, args.nu), args.eps, args.weight_decay)
                 self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, args.decay**(1/args.decay_steps))
@@ -84,8 +83,8 @@ class Resolver:
 
         self.scaler = GradScaler(enabled=args.amp)
 
-        if not os.path.exists("../ckpts/"):
-            os.makedirs("../ckpts/")
+        if not os.path.exists("ckpts/"):
+            os.makedirs("ckpts/")
         
         for epoch in range(1, args.num_epochs+1):
             self.epoch = epoch
@@ -93,7 +92,7 @@ class Resolver:
             self.train_epoch(epoch, train_corpus, steps=100)
 
             # Save often
-            self.save_model("../ckpts/{}".format(str(datetime.now())))
+            self.save_model("ckpts/{}".format(str(datetime.now())))
 
             # Evaluate every eval_interval epochs
             if epoch % eval_interval == 0:
@@ -196,13 +195,14 @@ class Resolver:
         return (loss.item(), mentions_found, total_mentions,
                 corefs_found, total_corefs, corefs_chosen)
 
-    def evaluate(self, val_corpus, eval_script='../src/eval/scorer.pl'):
+    def evaluate(self, val_corpus, eval_script='eval/scorer.pl'):
         """ Evaluate a corpus of CoNLL-2012 gold files """
 
         args = self.args.update(locals())
 
-        val_corpus = Corpus(dirname = args.val_corpus, pattern = args.pattern)
-
+        if isinstance(val_corpus, str):
+            val_corpus = Corpus(dirname = args.val_corpus, pattern = args.pattern)
+    
         # Predict files
         print('Evaluating on validation corpus...')
         predicted_docs = [self.predict(doc) for doc in tqdm(val_corpus)]
@@ -217,11 +217,11 @@ class Resolver:
         stdout, stderr = p.communicate()
         results = str(stdout).split('TOTALS')[-1]
 
-        if not os.path.exists("../preds/"):
-            os.makedirs("../preds/")
+        if not os.path.exists("preds/"):
+            os.makedirs("preds/")
 
         # Write the results out for later viewing
-        with open('../preds/results.txt', 'w+') as f:
+        with open('preds/results.txt', 'w+') as f:
             f.write(results)
             f.write('\n\n\n')
 
@@ -281,9 +281,9 @@ class Resolver:
         """ Write to out_file the predictions, return CoNLL metrics results """
 
         # Make predictions directory if there isn't one already
-        golds_file, preds_file = '../preds/golds.txt', '../preds/predictions.txt'
-        if not os.path.exists('../preds/'):
-            os.makedirs('../preds/')
+        golds_file, preds_file = 'preds/golds.txt', 'preds/predictions.txt'
+        if not os.path.exists('preds/'):
+            os.makedirs('preds/')
 
         # Combine all gold files into a single file (Perl script requires this)
         golds_file_content = flatten([doc.raw_text for doc in val_corpus])
@@ -325,8 +325,12 @@ class Resolver:
         if not os.path.exists(path):
             os.makedirs(path)
         configs = dict(self.args)
+        del configs['args']
+        state_dict = {k: v.cpu() for k, v in self.model.state_dict().items()}
+        pretrained = state_dict.pop('pretrained.weight', None)
         state = {'name': self.NAME,
-                 'model': self.model,
+                 'state_dict': state_dict,
+                 'pretrained': pretrained,
                  'optimizer': self.optimizer.state_dict(),
                  'scheduler': self.scheduler.state_dict(),
                  'epoch': self.epoch,
@@ -336,25 +340,26 @@ class Resolver:
         torch.save(state, os.path.join(path, 'pytorch_model.pt'), pickle_module=dill)
 
     @classmethod
-    def load_model(cls, path, src = 'gcp', reload = False, checkpoint=False,  **kwargs):
+    def load_model(cls, path, src = 'gcp', reload = False, checkpoint=True,  **kwargs):
         """ Load state dictionary into model """
         args = Config(**locals())
         if not os.path.exists(path):
             path = download(src, corefai.MODEL[src].get(path, path), reload=reload)
         state = torch.load(os.path.join(path, 'pytorch_model.pt'), map_location='cpu')
         cls = corefai.RESOLVER[state['name']] if cls.NAME is None else cls
-        model = state['model']
         optimizer = state['optimizer']
         scheduler = state['scheduler']
         epoch = state['epoch']
-
+        
         #load configs
         with open(os.path.join(path, 'config.json'), 'r') as f:
             configs = json.load(f)
         args.update(configs)
+        args.update({'checkpoint': checkpoint})
 
         resolver = cls(**args)
-        resolver.model = model
+        resolver.model.load_pretrained(state['pretrained'])
+        resolver.model.load_state_dict(state['state_dict'], False)
         resolver.optimizer.load_state_dict(optimizer)
         resolver.scheduler.load_state_dict(scheduler)
         resolver.epoch = epoch

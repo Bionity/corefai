@@ -37,6 +37,7 @@ def main():
     subparser.add_argument('--dev', default='/data', help='path to dev file')
     subparser.add_argument('--test', default='/data', help='path to test file')
     subparser.add_argument('--cache', default='~/.vectors_cache/', help='path to cache vectors file')
+    subparser.add_argument('--checkpoint', type=bool, default=True, help='wheter to resume training from a checkpoint')
     # evaluate
     subparser = subparsers.add_parser('evaluate', help='Evaluate the specified parser and dataset.')
     subparser.add_argument('--data', default='/data', help='path to dataset')

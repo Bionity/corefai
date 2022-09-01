@@ -30,6 +30,9 @@ class Config(object):
     def __getitem__(self, key):
         return getattr(self, key)
 
+    def __getattr__(self, item):
+        return None
+
     def __contains__(self, key):
         return hasattr(self, key)
 
@@ -63,7 +66,7 @@ class Config(object):
     def load(cls, conf='', unknown=None, **kwargs):
         config = ConfigParser()
         try:
-            config.read(conf if not conf or os.path.exists(conf))
+            config.read(conf)
         except:
             raise ValueError(f"Config file {conf} not found")
         config = dict((name, literal_eval(value))
