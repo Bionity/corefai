@@ -1,5 +1,6 @@
 from corefai.models import E2E_LSTM
-from corefai.structs import Document
+from corefai.structs import Document, Span
+import torch
 import os
 
 def test_e2e_lstm():
@@ -23,3 +24,7 @@ def test_e2e_lstm():
         cache = os.path.expanduser('~/.vector_cache/'))
 
     spans, cored_scores = scorer(doc)
+
+    assert isinstance(spans, list)
+    assert isinstance(cored_scores, torch.Tensor)
+    assert isinstance(spans[0], Span)

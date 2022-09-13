@@ -55,14 +55,14 @@ class LazyVectors:
 
 
     @classmethod
-    def from_corpus(cls, corpus_vocabulary: set, name: str, cache: str):
+    def from_corpus(cls, corpus_vocabulary: Set[str], name: str, cache: str):
         return cls(name=name, cache=cache, vocab=corpus_vocabulary)
 
     @cached_property
     def loader(self):
         return Vectors(self.name, cache=self.cache)
 
-    def set_vocab(self, vocab: set):
+    def set_vocab(self, vocab: Set[str]):
         """ Set corpus vocab
         """
         # Intersects and initializes the torchtext Vectors class

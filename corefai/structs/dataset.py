@@ -23,7 +23,9 @@ REMOVED_CHAR = ["/", "%", "*"]
 
 @attr.s(frozen=True, repr=False)
 class Span:
-
+    """
+    Object representing a span of tokens;
+    """
     # Left / right token indexes
     i1 = attr.ib()
     i2 = attr.ib()
@@ -63,7 +65,7 @@ class Document:
         genre: Optional[str] = None, 
         filename: Optional[str] = None):
         """
-        Basic class for storing a document.
+        Basic class for storing a document data.
         Args:
             raw_text (str): raw text of the document.
             tokens (str, list): list of tokens from the document.

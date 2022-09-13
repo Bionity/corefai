@@ -1,4 +1,4 @@
-from corefai.resolvers import Resolver, E2E_LSTM_Resolver
+from corefai.resolvers import Resolver
 from corefai.models import E2E_LSTM
 
 def test_loading():

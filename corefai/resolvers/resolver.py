@@ -13,7 +13,7 @@ from tqdm import tqdm
 from datetime import datetime
 from subprocess import Popen, PIPE
 from torch.cuda.amp import GradScaler
-from typing import Dict, Any, Optional
+from typing import Optional, Tuple
 
 import corefai
 from corefai.utils.transforms import safe_divide, extract_gold_corefs, flatten
@@ -52,8 +52,14 @@ class Resolver:
             self, 
             num_epochs: int, 
             eval_interval: int, 
-            train_corpus: str, val_corpus:str, **kwargs):
-        """ Train a model """
+            train_corpus: str, val_corpus:str, **kwargs) -> None:
+        """ Train a model 
+            Args: 
+                num_epochs (int): number of epochs to train for;
+                eval_interval (int): number of epochs between evaluations;
+                train_corpus (str): path to training corpus;
+                val_corpus (str): path to validation corpus;
+        """
         args = self.args.update(locals())
 
         train_corpus = Corpus(dirname = args.train_corpus, pattern = args.pattern)
@@ -101,8 +107,13 @@ class Resolver:
                 results = self.evaluate(val_corpus)
                 print(results)
 
-    def train_epoch(self, epoch, train_corpus, steps):
-        """ Run a training epoch over 'steps' documents """
+    def train_epoch(self, epoch: int, train_corpus: Corpus, steps: int) -> None:
+        """ Run a training epoch over 'steps' documents 
+            Args:
+                epoch (int): current epoch number;
+                train_corpus (Corpus): training corpus;
+                steps (int): number of documents to train on;
+        """
 
         # Set model to train (enables dropout)
         self.model.train()
@@ -137,7 +148,7 @@ class Resolver:
                 % (epoch, np.mean(epoch_loss), np.mean(epoch_mentions),
                     np.mean(epoch_corefs), np.mean(epoch_identified)))
 
-    def train_doc(self, document):
+    def train_doc(self, document: Document) -> Tuple[float, int, int, int, int, int]:
         """ Compute loss for a forward pass over a document """
         # Extract gold coreference links
         gold_corefs, total_corefs, \
